@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from models import LLMRequest, LLMResponse
-from LLM.LLM_interface import get_policy_answer
+from LLM_interface import get_policy_answer
 from exceptions import raise_400, raise_422, raise_500
 
 app = FastAPI(title="Timing-LLM-Server")
