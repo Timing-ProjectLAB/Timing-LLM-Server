@@ -1,18 +1,12 @@
 from fastapi import FastAPI
-from models import LLMRequest, LLMResponse
-from LLM_interface import get_policy_answer
-from exceptions import raise_400, raise_422, raise_500
+from api.chatbot import router as chatbot_router
+from core.vectorstore import load_all_vectorstores
 
-app = FastAPI(title="Timing-LLM-Server")
+app = FastAPI()
 
-@app.post("/llm/answers", response_model=LLMResponse)
-def ask_llm(request: LLMRequest):
-    if not request.user_id or not request.question:
-        raise_400("Missing required field: 'user_id' or 'question'")
-    
-    try:
-        answer = get_policy_answer(request.question)
+@app.on_event("startup")
+def startup_event():
+    app.state.vectorstores = load_all_vectorstores()
+    print(app.state.vectorstores)
 
-        return LLMResponse(answer=answer)
-    except Exception as e:
-        raise_500(f"LLM processing failed: {str(e)}")
+app.include_router(chatbot_router)
