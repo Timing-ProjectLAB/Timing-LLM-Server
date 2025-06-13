@@ -9,4 +9,4 @@ def startup_event():
     app.state.vectorstores = load_all_vectorstores()
     print(app.state.vectorstores)
 
-app.include_router(chatbot_router, prefix="/api")
+app.include_router(chatbot_router)
