@@ -1,5 +1,7 @@
 .env
 .venv
 __pycache__/
+kwdb/
 chroma_policies/
-LLM/
+categorydb/
+FINAL_key_cat.json
