@@ -3,7 +3,7 @@ from typing import List, Optional
 
 class ChatRequest(BaseModel):
     user_id: str
-    message: str
+    question: str
 
 class PolicyItem(BaseModel):
     policy_id: str
