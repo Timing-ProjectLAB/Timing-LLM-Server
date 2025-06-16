@@ -10,5 +10,5 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     global chatbot_service
     if chatbot_service is None:
         chatbot_service = ChatbotService(request.app.state.vectorstores["policy"])
-    result = chatbot_service.chat(req.user_id, req.message)
+    result = chatbot_service.chat(req.user_id, req.question)
     return result
