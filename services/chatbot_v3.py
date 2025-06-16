@@ -503,13 +503,20 @@ def load_or_build_vectorstore(json_path: str,
             "policy_id":        p.get("policy_id"),
             "title":            p["title"],
             "region":           ", ".join(p.get("region_name", [])),
-            "categories":       extract_categories(p.get("category", "")),
-            "keywords":         merged_keywords,
+            "categories":       ", ".join(extract_categories(p.get('category', ''))),
+            "keywords":         ", ".join(merged_keywords),
             "min_age":          safe_int(p.get("min_age")),
             "max_age":          safe_int(p.get("max_age"), 99),
             "income_condition": p.get("income_condition", "제한 없음"),
             "summary": (p.get("support_content") or p.get("description", ""))[:200],
-            "apply_period":     p.get("apply_period", ""),}   
+            "apply_period":     p.get("apply_period", ""),
+            "apply_url":        p.get("apply_url", ""),
+        }
+
+        # Ensure metadata values are primitive types for Chroma
+        for mk, mv in metadata.items():
+            if isinstance(mv, (list, set)):
+                metadata[mk] = ", ".join(map(str, mv))
 
         chunks = splitter.split_text(text)
         documents = [Document(page_content=chunk, metadata=metadata) for chunk in chunks]
@@ -646,18 +653,18 @@ SYSTEM = SystemMessagePromptTemplate.from_template("""
 6. 조건이 명확하지 않으면 조회량이 많은 전국 공통 정책 3건을 대신 추천하세요.
 
 [OUTPUT FORMAT - MARKDOWN]
-- **정책명** (소득: ○○): 지원내용 요약 — 추천 이유 (링크 : apply_url) (정첵ID : policy_id)
-- **정책명** (소득: ○○): 지원내용 요약 — 추천 이유 (링크 : apply_url) (정첵ID : policy_id)
-- **정책명** (소득: ○○): 지원내용 요약 — 추천 이유 (링크 : apply_url) (정첵ID : policy_id)
+- 정책명 (소득: ○○): 지원내용 요약 — 추천 이유 (링크 : apply_url) (정첵ID : policy_id)
+- 정책명 (소득: ○○): 지원내용 요약 — 추천 이유 (링크 : apply_url) (정첵ID : policy_id)
+- 정책명 (소득: ○○): 지원내용 요약 — 추천 이유 (링크 : apply_url) (정첵ID : policy_id)
 
 [EXCEPTION]
 - 조건에 맞는 정책이 없을 경우:
     대신 전국 공통 정책 3건을 출력하세요.
 
 [EXAMPLE - NORMAL]
-- **청년내일채움공제** (소득: 제한 없음): 중소기업 근무 청년에게 목돈 마련 지원 — 나이와 소득 조건 모두 부합 (출처: policy_123)
-- **국민취업지원제도** (소득: 기준중위소득 100% 이하): 취업준비 중 청년에게 맞춤형 취업지원 — 관심사 '취업'과 일치 (출처: policy_456)
-- **청년구직활동지원금** (소득: 기준중위소득 120% 이하): 구직활동비 월 최대 50만원 지원 — 지역, 관심사 모두 일치 (출처: policy_789)
+- 청년내일채움공제 (소득: 제한 없음): 중소기업 근무 청년에게 목돈 마련 지원 — 나이와 소득 조건 모두 부합 (출처: policy_123)
+- 국민취업지원제도 (소득: 기준중위소득 100% 이하): 취업준비 중 청년에게 맞춤형 취업지원 — 관심사 '취업'과 일치 (출처: policy_456)
+- 청년구직활동지원금 (소득: 기준중위소득 120% 이하): 구직활동비 월 최대 50만원 지원 — 지역, 관심사 모두 일치 (출처: policy_789)
 
 [EXAMPLE - FALLBACK]
 해당 조건에 맞는 정책이 없습니다. 대신 전국 공통 정책 3건을 추천합니다.
@@ -1043,7 +1050,7 @@ def console_chat(rag_chain, llm, keyword_vectordb=None, category_vectordb=None, 
                 stored_interests
             )
 
-            docs = docs[:3]  # 상위 3건만
+            docs = docs[:1]  # 상위 1건만
 
         # ------ ② 출력 로직 ------
         if not docs:
@@ -1114,14 +1121,13 @@ def console_chat(rag_chain, llm, keyword_vectordb=None, category_vectordb=None, 
             if not pid:
                 continue
             if pid in recommended_ids or pid in seen_ids:
-                continue              # 이미 보여줬거나 현재 리스트에 중복
+                continue  # 이미 보여줬거나 현재 리스트에 중복
             unique_docs.append(d)
             seen_ids.add(pid)
-            if len(unique_docs) == 3:
-                break
+            break  # ✅ 단 1건만 수집
 
-        # 추가 탐색: 중복 제거로 3건이 안 채워졌을 경우 raw_docs에서 보충 (seen_ids도 체크)
-        if len(unique_docs) < 3:
+        # 추가 탐색: 중복 제거로 1건이 안 채워졌을 경우 raw_docs에서 보충 (seen_ids도 체크)
+        if len(unique_docs) < 1:
             # raw_docs가 있을 때만
             extra_pool = [rd for rd in raw_docs
                           if rd.metadata.get("policy_id")
@@ -1130,7 +1136,7 @@ def console_chat(rag_chain, llm, keyword_vectordb=None, category_vectordb=None, 
             for rd in extra_pool:
                 unique_docs.append(rd)
                 seen_ids.add(rd.metadata.get("policy_id"))
-                if len(unique_docs) == 3:
+                if len(unique_docs) == 1:
                     break
         # ------ ⏱ 응답 시간 측정 및 출력 ------
         # ⏱ end_time = time.time()
@@ -1342,13 +1348,16 @@ def generate_policy_response(
 
     docs = filter_docs(raw_docs, age, search_query, region, interests)
 
-    # 🔎 이전에 추천했던 정책은 제외
+    # 🔎 이전에 추천했던 정책은 제외 + 중복 응답 차단
+    seen_ids = set()
     filtered_docs = []
     for d in docs:
         pid = d.metadata.get("policy_id")
-        if pid and pid not in prev_recommended_ids:
-            filtered_docs.append(d)
-        if len(filtered_docs) == 3:  # 최대 3건
+        if not pid or pid in prev_recommended_ids or pid in seen_ids:
+            continue
+        filtered_docs.append(d)
+        seen_ids.add(pid)
+        if len(filtered_docs) == 3:
             break
     docs = filtered_docs
 
@@ -1374,11 +1383,19 @@ def generate_policy_response(
     # 6) 정상 추천 -----------------------------------------------------
     policies = []
     for d in docs:
+        apply_url = d.metadata.get("apply_url", "")
+        if not apply_url:
+            # 🔎 페이지 본문이나 요약에서 URL 패턴 추출
+            m = re.search(r"https?://[^\s)]+", d.page_content)
+            if not m:
+                m = re.search(r"https?://[^\s)]+", d.metadata.get("summary", ""))
+            if m:
+                apply_url = m.group(0)
         policies.append({
             "policy_id": d.metadata.get("policy_id", ""),
             "title":     d.metadata.get("title", ""),
             "summary":   d.metadata.get("summary", "") or d.page_content[:120],
-            "apply_url": d.metadata.get("apply_url", ""),
+            "apply_url": apply_url,
             "reason":    _compose_reason(d, user_info),
         })
 
